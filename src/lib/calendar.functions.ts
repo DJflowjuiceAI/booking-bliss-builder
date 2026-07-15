@@ -136,7 +136,7 @@ export const getCalendarEvents = createServerFn({ method: "GET" })
     const res = await fetch(url.toString(), {
       headers: {
         Accept: "application/json",
-        Version: "2021-04-15",
+        Version: "v3",
         Authorization: `Bearer ${token}`,
       },
     });
