@@ -852,11 +852,59 @@ function NewReservationModal({
   const [source, setSource] = useState<ReservationSource>("phone");
   const [error, setError] = useState<string | null>(null);
 
+  // Contact search state
+  const [contactQuery, setContactQuery] = useState("");
+  const [contactResults, setContactResults] = useState<ContactSearchResult[]>([]);
+  const [contactSearching, setContactSearching] = useState(false);
+  const [contactOpen, setContactOpen] = useState(false);
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
   }, [onClose]);
+
+  useEffect(() => {
+    const q = contactQuery.trim();
+    if (q.length < 2) {
+      setContactResults([]);
+      setContactSearching(false);
+      return;
+    }
+    setContactSearching(true);
+    const ctrl = { cancelled: false };
+    const t = setTimeout(async () => {
+      try {
+        const results = await searchContacts({ data: { query: q } });
+        if (!ctrl.cancelled) {
+          setContactResults(results);
+          setContactOpen(true);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        if (!ctrl.cancelled) setContactSearching(false);
+      }
+    }, 300);
+    return () => {
+      ctrl.cancelled = true;
+      clearTimeout(t);
+    };
+  }, [contactQuery]);
+
+  const applyContact = (c: ContactSearchResult) => {
+    const parts = c.name.split(" ");
+    const first = c.firstName || parts[0] || "";
+    const last = c.lastName || parts.slice(1).join(" ") || "";
+    setFirstName(first);
+    setLastName(last);
+    setPhone(c.phone || "");
+    setEmail(c.email || "");
+    setSelectedContactId(c.id);
+    setContactQuery(c.name);
+    setContactOpen(false);
+  };
 
   const save = () => {
     if (!firstName.trim() || !lastName.trim()) {
