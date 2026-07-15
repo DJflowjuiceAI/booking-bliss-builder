@@ -193,7 +193,7 @@ function BookingPage() {
   };
 
   const addReservation = (r: Reservation) => {
-    setReservations((prev) => [...prev, r]);
+    setLocalReservations((prev) => [...prev, r]);
     setActiveDateISO(r.dateISO);
     setFloor(r.floor);
   };
