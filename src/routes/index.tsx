@@ -18,6 +18,7 @@ import {
   Clock,
 } from "lucide-react";
 import { getCalendarEvents, type CalendarReservation } from "@/lib/calendar.functions";
+import { searchContacts, type ContactSearchResult } from "@/lib/contacts.functions";
 
 export const Route = createFileRoute("/")({
   component: BookingPage,
@@ -851,11 +852,59 @@ function NewReservationModal({
   const [source, setSource] = useState<ReservationSource>("phone");
   const [error, setError] = useState<string | null>(null);
 
+  // Contact search state
+  const [contactQuery, setContactQuery] = useState("");
+  const [contactResults, setContactResults] = useState<ContactSearchResult[]>([]);
+  const [contactSearching, setContactSearching] = useState(false);
+  const [contactOpen, setContactOpen] = useState(false);
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
   }, [onClose]);
+
+  useEffect(() => {
+    const q = contactQuery.trim();
+    if (q.length < 2) {
+      setContactResults([]);
+      setContactSearching(false);
+      return;
+    }
+    setContactSearching(true);
+    const ctrl = { cancelled: false };
+    const t = setTimeout(async () => {
+      try {
+        const results = await searchContacts({ data: { query: q } });
+        if (!ctrl.cancelled) {
+          setContactResults(results);
+          setContactOpen(true);
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        if (!ctrl.cancelled) setContactSearching(false);
+      }
+    }, 300);
+    return () => {
+      ctrl.cancelled = true;
+      clearTimeout(t);
+    };
+  }, [contactQuery]);
+
+  const applyContact = (c: ContactSearchResult) => {
+    const parts = c.name.split(" ");
+    const first = c.firstName || parts[0] || "";
+    const last = c.lastName || parts.slice(1).join(" ") || "";
+    setFirstName(first);
+    setLastName(last);
+    setPhone(c.phone || "");
+    setEmail(c.email || "");
+    setSelectedContactId(c.id);
+    setContactQuery(c.name);
+    setContactOpen(false);
+  };
 
   const save = () => {
     if (!firstName.trim() || !lastName.trim()) {
@@ -917,6 +966,57 @@ function NewReservationModal({
           <div className="grid gap-6 md:grid-cols-2">
             {/* Guest */}
             <Section title="Guest" icon={<Users className="h-3.5 w-3.5" />}>
+              <Field label="Find existing guest">
+                <div className="relative">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      className={`${inputCls} pl-9`}
+                      value={contactQuery}
+                      onChange={(e) => {
+                        setContactQuery(e.target.value);
+                        setSelectedContactId(null);
+                      }}
+                      onFocus={() => contactResults.length > 0 && setContactOpen(true)}
+                      placeholder="Search by name, email, or phone"
+                    />
+                    {contactSearching && (
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        …
+                      </span>
+                    )}
+                  </div>
+                  {contactOpen && contactResults.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-card shadow-lg">
+                      {contactResults.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => applyContact(c)}
+                          className={`flex w-full flex-col items-start gap-0.5 border-b border-border/50 px-3 py-2 text-left text-sm transition last:border-0 hover:bg-secondary ${
+                            selectedContactId === c.id ? "bg-secondary" : ""
+                          }`}
+                        >
+                          <span className="font-semibold text-foreground">{c.name}</span>
+                          <span className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground">
+                            {c.email && <span>{c.email}</span>}
+                            {c.phone && <span>{c.phone}</span>}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {contactOpen &&
+                    !contactSearching &&
+                    contactQuery.trim().length >= 2 &&
+                    contactResults.length === 0 && (
+                      <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground shadow-lg">
+                        No matching guests
+                      </div>
+                    )}
+                </div>
+              </Field>
+
               <div className="grid grid-cols-2 gap-3">
                 <Field label="First name">
                   <input
