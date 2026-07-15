@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   CalendarDays,
   ChevronLeft,
@@ -15,11 +16,14 @@ import {
   UtensilsCrossed,
   MapPin,
   Clock,
+  Loader2,
 } from "lucide-react";
+import { getCalendarEvents, type CalendarReservation } from "@/lib/calendar.functions";
 
 export const Route = createFileRoute("/")({
   component: BookingPage,
 });
+
 
 /* ─────────────── Types & data ─────────────── */
 
