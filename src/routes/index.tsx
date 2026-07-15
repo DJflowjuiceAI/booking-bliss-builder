@@ -103,9 +103,7 @@ function BookingPage() {
   );
   const [floor, setFloor] = useState<FloorType>("main");
   const [selectedTable, setSelectedTable] = useState<number | null>(null);
-  const [reservations, setReservations] = useState<Reservation[]>(() =>
-    seed(toISODate(today)),
-  );
+  const [localReservations, setLocalReservations] = useState<Reservation[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedReservationId, setSelectedReservationId] = useState<
     string | null
@@ -113,6 +111,29 @@ function BookingPage() {
 
   const activeDate = fromISODate(activeDateISO);
   const weekStart = fromISODate(weekStartISO);
+
+  // Query calendar events for the visible week (ms since epoch).
+  const weekEndISO = toISODate(addDays(weekStart, 7));
+  const startTimeMs = fromISODate(weekStartISO).getTime();
+  const endTimeMs = fromISODate(weekEndISO).getTime();
+
+  const eventsQuery = useQuery({
+    queryKey: ["calendar-events", weekStartISO],
+    queryFn: () =>
+      getCalendarEvents({ data: { startTime: startTimeMs, endTime: endTimeMs } }),
+    staleTime: 60_000,
+  });
+
+  const remoteReservations = useMemo<Reservation[]>(
+    () => (eventsQuery.data || []).map(fromCalendarReservation),
+    [eventsQuery.data],
+  );
+
+  const reservations = useMemo(
+    () => [...remoteReservations, ...localReservations],
+    [remoteReservations, localReservations],
+  );
+
 
   const weekDays = useMemo(
     () =>
