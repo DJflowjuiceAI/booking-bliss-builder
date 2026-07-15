@@ -81,17 +81,20 @@ const FLOOR_LABEL: Record<FloorType, string> = {
   terrace: "Terrace",
 };
 
-const seed = (activeISO: string): Reservation[] => {
-  const d = activeISO;
-  return [
-    { id: "1", dateISO: d, shift: "Lunch", timeLabel: "12:00", guests: 10, floor: "main", table: 1, status: "confirmed", source: "phone", guestName: "Nikos Manolis", phone: "+30 210 555 0112" },
-    { id: "2", dateISO: d, shift: "Dinner", timeLabel: "19:30", guests: 2, floor: "terrace", table: 52, status: "confirmed", source: "online", guestName: "Elena Ioannou", phone: "+30 693 555 3491", note: "Window seat" },
-    { id: "3", dateISO: d, shift: "Dinner", timeLabel: "20:15", guests: 4, floor: "terrace", table: 54, status: "confirmed", source: "email", guestName: "Marina Petrou", phone: "+30 694 555 8820", note: "Anniversary" },
-    { id: "4", dateISO: d, shift: "Lunch", timeLabel: "13:30", guests: 6, floor: "balcony", table: 22, status: "no-show", source: "phone", guestName: "Andreas Kostas", phone: "+30 210 555 7712" },
-    { id: "5", dateISO: d, shift: "Dinner", timeLabel: "21:00", guests: 3, floor: "main", table: 5, status: "confirmed", source: "online", guestName: "Sophia Ralli", phone: "+30 697 555 4001" },
-    { id: "6", dateISO: d, shift: "Breakfast", timeLabel: "10:15", guests: 2, floor: "main", table: 3, status: "confirmed", source: "walk-in", guestName: "Dimitri V.", phone: "" },
-  ];
-};
+const fromCalendarReservation = (c: CalendarReservation): Reservation => ({
+  id: c.id,
+  dateISO: c.dateISO,
+  shift: c.shift,
+  timeLabel: c.timeLabel,
+  guests: c.guests,
+  floor: c.floor,
+  table: c.table || (FLOOR_TABLES[c.floor]?.[0] ?? 0),
+  status: c.status,
+  source: c.source,
+  guestName: c.guestName,
+  phone: c.phone,
+  note: c.tags ? c.tags : c.note,
+});
 
 /* ─────────────── Page ─────────────── */
 
