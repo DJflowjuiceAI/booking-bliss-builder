@@ -16,7 +16,6 @@ import {
   UtensilsCrossed,
   MapPin,
   Clock,
-  Loader2,
 } from "lucide-react";
 import { getCalendarEvents, type CalendarReservation } from "@/lib/calendar.functions";
 
