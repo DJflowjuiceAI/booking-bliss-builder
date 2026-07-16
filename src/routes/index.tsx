@@ -1244,16 +1244,18 @@ function NewReservationModal({
         <div className="flex items-center justify-end gap-2 border-t border-border/70 bg-linen/60 px-6 py-4">
           <button
             onClick={onClose}
-            className="rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-secondary"
+            disabled={saving}
+            className="rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-secondary disabled:opacity-60"
           >
             Cancel
           </button>
           <button
             onClick={save}
-            className="inline-flex items-center gap-1.5 rounded-full bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition hover:brightness-110"
+            disabled={saving}
+            className="inline-flex items-center gap-1.5 rounded-full bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition hover:brightness-110 disabled:opacity-60"
           >
             <Plus className="h-4 w-4" />
-            Save reservation
+            {saving ? "Saving…" : "Save reservation"}
           </button>
         </div>
       </div>
