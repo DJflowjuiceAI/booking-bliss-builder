@@ -78,10 +78,12 @@ function shiftForHour(h: number): CalendarReservation["shift"] {
 
 function mapStatus(s?: string): CalendarReservation["status"] {
   const v = (s || "").toLowerCase();
+
   if (v === "cancelled" || v === "canceled") return "cancelled";
   if (v === "noshow" || v === "no-show" || v === "no_show") return "no-show";
-  if (v === "seated") return "seated";
+  if (v === "showed") return "completed";
   if (v === "completed" || v === "complete") return "completed";
+
   return "confirmed";
 }
 
@@ -124,7 +126,10 @@ async function getContactDetails(
   return json.contact || null;
 }
 
-function toReservation(ev: RawEvent, contact?: ContactDetails | null): CalendarReservation {
+function toReservation(
+  ev: RawEvent,
+  contact?: ContactDetails | null,
+): CalendarReservation {
   const details = parseDetails(ev.description || ev.notes);
   const { dateISO, timeLabel, hour } = splitIso(ev.startTime);
   const contactId = contactIdForEvent(ev);
@@ -138,10 +143,28 @@ function toReservation(ev: RawEvent, contact?: ContactDetails | null): CalendarR
     .map((s) => s.trim().replace(/^[A-Z]+\./i, ""))
     .filter((table) => {
       const tableNumber = Number(table);
-      return Number.isFinite(tableNumber) && tableNumber >= 1 && tableNumber <= 16;
+      return (
+        Number.isFinite(tableNumber) &&
+        tableNumber >= 1 &&
+        tableNumber <= 16
+      );
     });
 
-  const guests = Number(details["number of guests"] || details["guests"] || 2) || 2;
+  const guests =
+    Number(details["number of guests"] || details["guests"] || 2) || 2;
+
+  // Read reservation status from appointment description
+  const reservationStatus = (
+    details["reservation status"] || ""
+  ).toLowerCase();
+
+  let status: CalendarReservation["status"];
+
+  if (reservationStatus === "seated") {
+    status = "seated";
+  } else {
+    status = mapStatus(ev.appointmentStatus);
+  }
 
   return {
     id: ev.id,
@@ -152,7 +175,7 @@ function toReservation(ev: RawEvent, contact?: ContactDetails | null): CalendarR
     floor,
     table: tables[0] ?? "",
     tables,
-    status: mapStatus(ev.appointmentStatus),
+    status,
     source: mapSource(ev.createdBy?.source),
     guestName: contactName(contact || undefined) || ev.title || "Guest",
     phone: contact?.phone || "",
