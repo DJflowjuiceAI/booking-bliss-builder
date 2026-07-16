@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { getCalendarEvents, type CalendarReservation } from "@/lib/calendar.functions";
 import { searchContacts, type ContactSearchResult } from "@/lib/contacts.functions";
+import { createReservation } from "@/lib/reservations.functions";
 
 export const Route = createFileRoute("/")({
   component: BookingPage,
