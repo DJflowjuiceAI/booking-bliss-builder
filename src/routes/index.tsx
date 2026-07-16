@@ -29,7 +29,7 @@ export const Route = createFileRoute("/")({
 /* ─────────────── Types & data ─────────────── */
 
 type Shift = "Breakfast" | "Lunch" | "Dinner";
-type FloorType = "main" | "balcony" | "lounge" | "terrace" | "vip" | "bar" | "outdoor" | "dinein";
+type FloorType = "main" | "balcony" | "lounge" | "terrace";
 type ReservationStatus = "confirmed" | "no-show" | "cancelled";
 type ReservationSource = "phone" | "email" | "online" | "walk-in";
 
