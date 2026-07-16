@@ -35,6 +35,7 @@ export type UpdateReservationInput = CreateReservationInput & {
 };
 
 const BOOKING_NUMBER_FIELD_ID = "gMjbx4dwxAGQGPGxI17l";
+const SEATED_WORKFLOW_ID = "aa36db51-b4dd-4166-8705-ec005bec5ddc";
 
 // FIX: Greece is UTC+3 (EEST summer) / UTC+2 (EET winter).
 // Using +03:00 for summer (Apr–Oct covers the restaurant season).
@@ -99,9 +100,25 @@ function buildStartIso(dateISO: string, timeLabel: string) {
 }
 
 function appointmentStatusForApi(status: CreateReservationInput["status"]) {
-  if (status === "no-show") return "noshow";
-  if (status === "cancelled") return "cancelled";
-  return "confirmed";
+  switch (status) {
+    case "confirmed":
+      return "confirmed";
+
+    case "seated":
+      return "confirmed";      // <-- Change this
+
+    case "completed":
+      return "showed";
+
+    case "no-show":
+      return "noshow";
+
+    case "cancelled":
+      return "cancelled";
+
+    default:
+      return "confirmed";
+  }
 }
 
 function buildDescription(data: CreateReservationInput) {
@@ -111,9 +128,11 @@ function buildDescription(data: CreateReservationInput) {
     `Number of Guests : ${data.guests}`,
     `Floor : ${floorLabel}`,
     `Assigned Table : ${data.tables.join(", ")}`,
+    `Reservation Status : ${data.status}`,
   ];
   if (data.tags) lines.push(`Tags : ${data.tags}`);
   if (data.note) lines.push(`Notes : ${data.note}`);
+  console.log("buildDescription status:", data.status);
   return lines.join("\n");
 }
 
@@ -263,6 +282,35 @@ async function updateContactBookingNumber(
   }
 }
 
+async function addContactToWorkflow(
+  token: string,
+  contactId: string,
+  eventStartTime: string,
+) {
+  if (!contactId) return;
+
+  const res = await fetch(
+    `https://services.leadconnectorhq.com/contacts/${contactId}/workflow/${SEATED_WORKFLOW_ID}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Version: "2021-04-15",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        eventStartTime,
+      }),
+    },
+  );
+
+  if (!res.ok) {
+    const body = await res.text();
+    console.error(`Add contact to workflow failed [${res.status}]: ${body}`);
+  }
+}
+
 /* ── CREATE ───────────────────────────────────────────── */
 
 export const createReservation = createServerFn({ method: "POST" })
@@ -348,9 +396,22 @@ export const updateReservation = createServerFn({ method: "POST" })
     const { token, calendarId, assignedUserId } = env();
 
     if (data.contactId) {
+      if (data.status === "seated") {
+        await addContactToWorkflow(
+          token,
+          data.contactId,
+          buildStartIso(data.dateISO, data.timeLabel),
+        );
+      }
+
       await addContactTags(token, data.contactId, data.tags);
+
       if (data.bookingNumber) {
-        await updateContactBookingNumber(token, data.contactId, data.bookingNumber);
+        await updateContactBookingNumber(
+          token,
+          data.contactId,
+          data.bookingNumber,
+        );
       }
     }
 
@@ -395,7 +456,13 @@ export const updateReservationStatus = createServerFn({ method: "POST" })
 
     // GHL uses "noshow" not "no-show"
     const appointmentStatus =
-      data.status === "no-show" ? "noshow" : data.status;
+      data.status === "no-show"
+        ? "noshow"
+        : data.status === "completed"
+          ? "showed"
+          : data.status === "seated"
+            ? "confirmed"
+            : data.status;
 
     const res = await fetch(
       `https://services.leadconnectorhq.com/calendars/events/appointments/${data.appointmentId}`,
