@@ -29,7 +29,7 @@ export const Route = createFileRoute("/")({
 /* ─────────────── Types & data ─────────────── */
 
 type Shift = "Breakfast" | "Lunch" | "Dinner";
-type FloorType = "main" | "balcony" | "lounge" | "terrace" | "vip" | "bar" | "outdoor" | "dinein";
+type FloorType = "main" | "balcony" | "lounge" | "terrace";
 type ReservationStatus = "confirmed" | "no-show" | "cancelled";
 type ReservationSource = "phone" | "email" | "online" | "walk-in";
 
@@ -65,8 +65,8 @@ const addDays = (d: Date, n: number) => {
   return result;
 };
 const startOfWeek = (d: Date) => {
-  const day = d.getDay() || 7;
-  return addDays(d, -day + 1);
+  // Sunday = 0 … Saturday = 6
+  return addDays(d, -d.getDay());
 };
 const fmtDayNum = (d: Date) =>
   d.toLocaleDateString("en-US", { day: "numeric" });
@@ -81,23 +81,13 @@ const shiftForHour = (h: number): Shift =>
   h < 12 ? "Breakfast" : h < 17 ? "Lunch" : "Dinner";
 
 const FLOOR_TABLES: Record<FloorType, string[]> = {
-  // Numeric floors kept for backward compat — stored as "TABLE.N" strings
   main:    Array.from({ length: 14 }, (_, i) => `TABLE.${i + 1}`),
   balcony: Array.from({ length: 8  }, (_, i) => `TABLE.${i + 21}`),
   lounge:  Array.from({ length: 6  }, (_, i) => `TABLE.${i + 41}`),
   terrace: Array.from({ length: 10 }, (_, i) => `TABLE.${i + 51}`),
-  // Thalassa GHL-matched floors
-  dinein:  Array.from({ length: 16 }, (_, i) => `TABLE.${i + 1}`),
-  vip:     [34, 35, 36, 37, 38, 39, 40].map((n) => `TABLE.${n}`),
-  bar:     Array.from({ length: 10 }, (_, i) => `BT.${i + 1}`),
-  outdoor: [...Array.from({ length: 6 }, (_, i) => `OUT.${i + 1}`), ...Array.from({ length: 6 }, (_, i) => `OUT.${i + 200}`)],
 };
 
 const FLOOR_LABEL: Record<FloorType, string> = {
-  dinein:  "Dine-in",
-  vip:     "VIP",
-  bar:     "Bar",
-  outdoor: "Outdoor",
   main: "Main Floor",
   balcony: "Balcony",
   lounge: "Lounge",
@@ -110,8 +100,8 @@ const fromCalendarReservation = (c: CalendarReservation): Reservation => ({
   shift: c.shift,
   timeLabel: c.timeLabel,
   guests: c.guests,
-  floor: c.floor,
-  table: c.table ?? FLOOR_TABLES[c.floor]?.[0] ?? "",
+  floor: (FLOOR_TABLES as Record<string, string[]>)[c.floor] ? (c.floor as FloorType) : "main",
+  table: c.table ?? (FLOOR_TABLES as Record<string, string[]>)[c.floor]?.[0] ?? "",
   status: c.status,
   source: c.source,
   guestName: c.guestName,
