@@ -908,7 +908,7 @@ function NewReservationModal({
     setContactOpen(false);
   };
 
-  const save = () => {
+  const save = async () => {
     if (!firstName.trim() || !lastName.trim()) {
       setError("Please enter guest name.");
       return;
@@ -922,20 +922,47 @@ function NewReservationModal({
       return;
     }
     const [h] = time.split(":").map(Number);
-    onSave({
-      id: `r-${Date.now()}`,
-      dateISO,
-      shift: shiftForHour(h),
-      timeLabel: time,
-      guests,
-      floor,
-      table,
-      status,
-      source,
-      guestName: `${firstName} ${lastName}`.trim(),
-      phone: phone || email,
-      note: note.trim() || undefined,
-    });
+    setError(null);
+    setSaving(true);
+    try {
+      const result = await createReservation({
+        data: {
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          email: email.trim() || undefined,
+          phone: phone.trim() || undefined,
+          contactId: selectedContactId,
+          dateISO,
+          timeLabel: time,
+          guests,
+          floor,
+          tables: [table],
+          status,
+          note: note.trim() || undefined,
+        },
+      });
+      onSave({
+        id: result.appointmentId || `r-${Date.now()}`,
+        dateISO,
+        shift: shiftForHour(h),
+        timeLabel: time,
+        guests,
+        floor,
+        table,
+        status,
+        source,
+        guestName: `${firstName} ${lastName}`.trim(),
+        phone: phone || email,
+        note: note.trim() || undefined,
+      });
+    } catch (e) {
+      console.error(e);
+      setError(
+        e instanceof Error ? e.message : "Failed to save reservation. Please try again.",
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
