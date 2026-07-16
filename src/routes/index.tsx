@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarDays,
   ChevronLeft,
@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { getCalendarEvents, type CalendarReservation } from "@/lib/calendar.functions";
 import { searchContacts, type ContactSearchResult } from "@/lib/contacts.functions";
-import { createReservation } from "@/lib/reservations.functions";
+import { createReservation, updateReservationStatus } from "@/lib/reservations.functions";
 
 export const Route = createFileRoute("/")({
   component: BookingPage,
@@ -29,7 +29,7 @@ export const Route = createFileRoute("/")({
 /* ─────────────── Types & data ─────────────── */
 
 type Shift = "Breakfast" | "Lunch" | "Dinner";
-type FloorType = "main" | "balcony" | "lounge" | "terrace";
+type FloorType = "main" | "balcony" | "lounge" | "terrace" | "vip" | "bar" | "outdoor" | "dinein";
 type ReservationStatus = "confirmed" | "no-show" | "cancelled";
 type ReservationSource = "phone" | "email" | "online" | "walk-in";
 
@@ -40,7 +40,7 @@ interface Reservation {
   timeLabel: string;
   guests: number;
   floor: FloorType;
-  table: number;
+  table: string;
   status: ReservationStatus;
   source: ReservationSource;
   guestName: string;
@@ -48,10 +48,22 @@ interface Reservation {
   note?: string;
 }
 
-const toISODate = (d: Date) => d.toISOString().split("T")[0];
-const fromISODate = (iso: string) => new Date(iso + "T00:00:00");
-const addDays = (d: Date, n: number) =>
-  new Date(d.getTime() + n * 86400000);
+const toISODate = (d: Date) => {
+  const pad = (n: number) => String(n).padStart(2, "0");
+
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
+const fromISODate = (iso: string) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
+
+const addDays = (d: Date, n: number) => {
+  const result = new Date(d);
+  result.setDate(result.getDate() + n);
+  return result;
+};
 const startOfWeek = (d: Date) => {
   const day = d.getDay() || 7;
   return addDays(d, -day + 1);
@@ -68,14 +80,24 @@ const dowLong = (d: Date) =>
 const shiftForHour = (h: number): Shift =>
   h < 12 ? "Breakfast" : h < 17 ? "Lunch" : "Dinner";
 
-const FLOOR_TABLES: Record<FloorType, number[]> = {
-  main: Array.from({ length: 14 }, (_, i) => i + 1),
-  balcony: Array.from({ length: 8 }, (_, i) => i + 21),
-  lounge: Array.from({ length: 6 }, (_, i) => i + 41),
-  terrace: Array.from({ length: 10 }, (_, i) => i + 51),
+const FLOOR_TABLES: Record<FloorType, string[]> = {
+  // Numeric floors kept for backward compat — stored as "TABLE.N" strings
+  main:    Array.from({ length: 14 }, (_, i) => `TABLE.${i + 1}`),
+  balcony: Array.from({ length: 8  }, (_, i) => `TABLE.${i + 21}`),
+  lounge:  Array.from({ length: 6  }, (_, i) => `TABLE.${i + 41}`),
+  terrace: Array.from({ length: 10 }, (_, i) => `TABLE.${i + 51}`),
+  // Thalassa GHL-matched floors
+  dinein:  Array.from({ length: 16 }, (_, i) => `TABLE.${i + 1}`),
+  vip:     [34, 35, 36, 37, 38, 39, 40].map((n) => `TABLE.${n}`),
+  bar:     Array.from({ length: 10 }, (_, i) => `BT.${i + 1}`),
+  outdoor: [...Array.from({ length: 6 }, (_, i) => `OUT.${i + 1}`), ...Array.from({ length: 6 }, (_, i) => `OUT.${i + 200}`)],
 };
 
 const FLOOR_LABEL: Record<FloorType, string> = {
+  dinein:  "Dine-in",
+  vip:     "VIP",
+  bar:     "Bar",
+  outdoor: "Outdoor",
   main: "Main Floor",
   balcony: "Balcony",
   lounge: "Lounge",
@@ -89,7 +111,7 @@ const fromCalendarReservation = (c: CalendarReservation): Reservation => ({
   timeLabel: c.timeLabel,
   guests: c.guests,
   floor: c.floor,
-  table: c.table || (FLOOR_TABLES[c.floor]?.[0] ?? 0),
+  table: c.table ?? FLOOR_TABLES[c.floor]?.[0] ?? "",
   status: c.status,
   source: c.source,
   guestName: c.guestName,
@@ -101,12 +123,13 @@ const fromCalendarReservation = (c: CalendarReservation): Reservation => ({
 
 function BookingPage() {
   const today = new Date();
+  const queryClient = useQueryClient();
   const [activeDateISO, setActiveDateISO] = useState(toISODate(today));
   const [weekStartISO, setWeekStartISO] = useState(
     toISODate(startOfWeek(today)),
   );
   const [floor, setFloor] = useState<FloorType>("main");
-  const [selectedTable, setSelectedTable] = useState<number | null>(null);
+  const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [localReservations, setLocalReservations] = useState<Reservation[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedReservationId, setSelectedReservationId] = useState<
@@ -176,12 +199,18 @@ function BookingPage() {
     return r;
   }, [customersToday]);
 
-  const tablesForFloor = FLOOR_TABLES[floor];
+  const tablesForFloor = FLOOR_TABLES[floor] ?? [];
   const tableMap = useMemo(() => {
-    const m = new Map<number, Reservation>();
+    const m = new Map<string, Reservation>();
     reservations
       .filter((r) => r.dateISO === activeDateISO && r.floor === floor)
-      .forEach((r) => m.set(r.table, r));
+      .forEach((r) => {
+        // A booking may cover multiple tables; register each
+        const tList = (r as unknown as { tables?: string[] }).tables?.length
+          ? (r as unknown as { tables: string[] }).tables
+          : [r.table];
+        tList.forEach((t) => { if (t) m.set(t, r); });
+      });
     return m;
   }, [reservations, activeDateISO, floor]);
 
@@ -199,7 +228,23 @@ function BookingPage() {
   const addReservation = (r: Reservation) => {
     setLocalReservations((prev) => [...prev, r]);
     setActiveDateISO(r.dateISO);
-    setFloor(r.floor);
+    setFloor(r.floor as FloorType);
+    // Invalidate so the next refetch picks up the real server data
+    void queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+  };
+
+  const handleStatusUpdate = async (id: string, status: "confirmed" | "no-show" | "cancelled") => {
+    try {
+      await updateReservationStatus({ data: { appointmentId: id, status } });
+      // Update local cache optimistically
+      setLocalReservations((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, status } : r))
+      );
+      // Also invalidate remote query so server state is fresh
+      void queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+    } catch (e) {
+      console.error("Status update failed:", e);
+    }
   };
 
   return (
@@ -227,9 +272,10 @@ function BookingPage() {
           selectedId={selectedReservationId}
           onSelect={(r) => {
             setSelectedReservationId(r.id);
-            setFloor(r.floor);
+            setFloor(r.floor as FloorType);
             setSelectedTable(r.table);
           }}
+          onStatusUpdate={handleStatusUpdate}
         />
 
         <RightPanel
@@ -484,11 +530,13 @@ function LeftPanel({
   customers,
   selectedId,
   onSelect,
+  onStatusUpdate,
 }: {
   byShift: Record<Shift, { bookings: number; guests: number }>;
   customers: Reservation[];
   selectedId: string | null;
   onSelect: (r: Reservation) => void;
+  onStatusUpdate: (id: string, status: "confirmed" | "no-show" | "cancelled") => Promise<void>;
 }) {
   return (
     <div className="flex min-h-0 flex-col gap-5">
@@ -559,40 +607,79 @@ function LeftPanel({
             <ul className="divide-y divide-border/60">
               {customers.map((r) => (
                 <li key={r.id}>
-                  <button
-                    onClick={() => onSelect(r)}
-                    className={`grid w-full grid-cols-[auto_1fr_auto] items-center gap-4 px-5 py-4 text-left transition ${
-                      selectedId === r.id
-                        ? "bg-secondary/60"
-                        : "hover:bg-secondary/40"
-                    }`}
-                  >
-                    <TimeChip time={r.timeLabel} shift={r.shift} />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate font-semibold text-foreground">
-                          {r.guestName}
-                        </span>
-                        <StatusPill status={r.status} />
-                      </div>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                        <span className="inline-flex items-center gap-1">
-                          <Users className="h-3 w-3" />
-                          {r.guests} guests
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <MapPin className="h-3 w-3" />
-                          {FLOOR_LABEL[r.floor]} · T{r.table}
-                        </span>
-                        {r.note && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-terracotta-soft px-1.5 py-0.5 text-[10px] font-semibold text-terracotta">
-                            {r.note}
+                  <div className={`transition ${selectedId === r.id ? "bg-secondary/60" : ""}`}>
+                    <button
+                      onClick={() => onSelect(r)}
+                      className={`grid w-full grid-cols-[auto_1fr_auto] items-center gap-4 px-5 py-4 text-left transition ${
+                        selectedId !== r.id ? "hover:bg-secondary/40" : ""
+                      }`}
+                    >
+                      <TimeChip time={r.timeLabel} shift={r.shift} />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate font-semibold text-foreground">
+                            {r.guestName}
                           </span>
-                        )}
+                          <StatusPill status={r.status} />
+                        </div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                          <span className="inline-flex items-center gap-1">
+                            <Users className="h-3 w-3" />
+                            {r.guests} guests
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <MapPin className="h-3 w-3" />
+                            {FLOOR_LABEL[r.floor] ?? r.floor} · {r.table || "—"}
+                          </span>
+                          {r.phone && (
+                            <span className="inline-flex items-center gap-1">
+                              <Phone className="h-3 w-3" />
+                              {r.phone}
+                            </span>
+                          )}
+                          {r.note && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-terracotta-soft px-1.5 py-0.5 text-[10px] font-semibold text-terracotta">
+                              {r.note}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <SourceDot source={r.source} />
-                  </button>
+                      <SourceDot source={r.source} />
+                    </button>
+                    {/* Status action buttons — shown when this row is selected */}
+                    {selectedId === r.id && r.status === "confirmed" && (
+                      <div className="flex gap-2 border-t border-border/40 px-5 py-2.5">
+                        <button
+                          onClick={() => void onStatusUpdate(r.id, "confirmed")}
+                          className="flex-1 rounded-full bg-sage-soft py-1.5 text-xs font-bold text-sage transition hover:brightness-95"
+                        >
+                          ✓ Arrived
+                        </button>
+                        <button
+                          onClick={() => void onStatusUpdate(r.id, "no-show")}
+                          className="flex-1 rounded-full bg-amber-soft py-1.5 text-xs font-bold text-amber-ink transition hover:brightness-95"
+                        >
+                          ✗ No Show
+                        </button>
+                        <button
+                          onClick={() => void onStatusUpdate(r.id, "cancelled")}
+                          className="flex-1 rounded-full bg-clay-soft py-1.5 text-xs font-bold text-clay transition hover:brightness-95"
+                        >
+                          ✕ Cancel
+                        </button>
+                      </div>
+                    )}
+                    {selectedId === r.id && r.status !== "confirmed" && (
+                      <div className="flex gap-2 border-t border-border/40 px-5 py-2.5">
+                        <button
+                          onClick={() => void onStatusUpdate(r.id, "confirmed")}
+                          className="flex-1 rounded-full border border-border py-1.5 text-xs font-bold text-muted-foreground transition hover:text-foreground"
+                        >
+                          ↩ Restore to Confirmed
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
@@ -675,10 +762,10 @@ function RightPanel({
 }: {
   floor: FloorType;
   setFloor: (f: FloorType) => void;
-  tables: number[];
-  tableMap: Map<number, Reservation>;
-  selectedTable: number | null;
-  setSelectedTable: (n: number | null) => void;
+  tables: string[];
+  tableMap: Map<string, Reservation>;
+  selectedTable: string | null;
+  setSelectedTable: (n: string | null) => void;
   onOpenNew: () => void;
   activeDate: Date;
 }) {
@@ -742,12 +829,12 @@ function RightPanel({
                   Table
                 </div>
                 <div className="font-display text-3xl font-semibold leading-none">
-                  {n}
+                  {n.includes(".") ? n.split(".")[1] : n}
                 </div>
                 {taken ? (
                   <div className="mt-1 flex items-center gap-1 text-[10px] font-semibold">
                     <Users className="h-3 w-3" />
-                    {res.guests} · {res.timeLabel}
+                    {res.guests}p · {res.timeLabel}
                   </div>
                 ) : (
                   <div className="mt-1 text-[10px] font-medium text-sage">
@@ -765,7 +852,7 @@ function RightPanel({
           <div className="text-sm">
             <span className="text-muted-foreground">Selected: </span>
             <span className="font-semibold">
-              Table {selectedTable} — {FLOOR_LABEL[floor]}
+              {selectedTable} — {FLOOR_LABEL[floor] ?? floor}
             </span>
             {tableMap.get(selectedTable) && (
               <span className="ml-2 text-muted-foreground">
@@ -834,7 +921,7 @@ function NewReservationModal({
 }: {
   activeDateISO: string;
   defaultFloor: FloorType;
-  defaultTable?: number;
+  defaultTable?: string | number;
   onClose: () => void;
   onSave: (r: Reservation) => void;
 }) {
@@ -843,12 +930,13 @@ function NewReservationModal({
   const [time, setTime] = useState("19:30");
   const [guests, setGuests] = useState(2);
   const [floor, setFloor] = useState<FloorType>(defaultFloor);
-  const [table, setTable] = useState<number | undefined>(defaultTable);
+  const [table, setTable] = useState<string | undefined>(typeof defaultTable === 'number' ? `TABLE.${defaultTable}` : defaultTable);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [note, setNote] = useState("");
+  const [tags, setTags] = useState(""); // e.g. "VIP, Loyal Customer"
   const [status, setStatus] = useState<ReservationStatus>("confirmed");
   const [source, setSource] = useState<ReservationSource>("phone");
   const [error, setError] = useState<string | null>(null);
@@ -936,8 +1024,9 @@ function NewReservationModal({
           timeLabel: time,
           guests,
           floor,
-          tables: [table],
+          tables: [typeof table === "number" ? `TABLE.${table}` : String(table)], // FIX: ensure string
           status,
+          tags: tags.trim() || undefined,   // FIX: pass tags
           note: note.trim() || undefined,
         },
       });
@@ -948,7 +1037,7 @@ function NewReservationModal({
         timeLabel: time,
         guests,
         floor,
-        table,
+        table: typeof table === "number" ? `TABLE.${table}` : String(table || ""),
         status,
         source,
         guestName: `${firstName} ${lastName}`.trim(),
