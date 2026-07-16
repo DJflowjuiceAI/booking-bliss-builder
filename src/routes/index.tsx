@@ -852,6 +852,7 @@ function NewReservationModal({
   const [status, setStatus] = useState<ReservationStatus>("confirmed");
   const [source, setSource] = useState<ReservationSource>("phone");
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   // Contact search state
   const [contactQuery, setContactQuery] = useState("");
