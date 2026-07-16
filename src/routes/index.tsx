@@ -65,8 +65,8 @@ const addDays = (d: Date, n: number) => {
   return result;
 };
 const startOfWeek = (d: Date) => {
-  const day = d.getDay() || 7;
-  return addDays(d, -day + 1);
+  // Sunday = 0 … Saturday = 6
+  return addDays(d, -d.getDay());
 };
 const fmtDayNum = (d: Date) =>
   d.toLocaleDateString("en-US", { day: "numeric" });
