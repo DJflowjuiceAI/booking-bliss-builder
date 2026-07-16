@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { getCalendarEvents, type CalendarReservation } from "@/lib/calendar.functions";
 import { searchContacts, type ContactSearchResult } from "@/lib/contacts.functions";
+import { createReservation } from "@/lib/reservations.functions";
 
 export const Route = createFileRoute("/")({
   component: BookingPage,
@@ -851,6 +852,7 @@ function NewReservationModal({
   const [status, setStatus] = useState<ReservationStatus>("confirmed");
   const [source, setSource] = useState<ReservationSource>("phone");
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   // Contact search state
   const [contactQuery, setContactQuery] = useState("");
@@ -906,7 +908,7 @@ function NewReservationModal({
     setContactOpen(false);
   };
 
-  const save = () => {
+  const save = async () => {
     if (!firstName.trim() || !lastName.trim()) {
       setError("Please enter guest name.");
       return;
@@ -920,20 +922,47 @@ function NewReservationModal({
       return;
     }
     const [h] = time.split(":").map(Number);
-    onSave({
-      id: `r-${Date.now()}`,
-      dateISO,
-      shift: shiftForHour(h),
-      timeLabel: time,
-      guests,
-      floor,
-      table,
-      status,
-      source,
-      guestName: `${firstName} ${lastName}`.trim(),
-      phone: phone || email,
-      note: note.trim() || undefined,
-    });
+    setError(null);
+    setSaving(true);
+    try {
+      const result = await createReservation({
+        data: {
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          email: email.trim() || undefined,
+          phone: phone.trim() || undefined,
+          contactId: selectedContactId,
+          dateISO,
+          timeLabel: time,
+          guests,
+          floor,
+          tables: [table],
+          status,
+          note: note.trim() || undefined,
+        },
+      });
+      onSave({
+        id: result.appointmentId || `r-${Date.now()}`,
+        dateISO,
+        shift: shiftForHour(h),
+        timeLabel: time,
+        guests,
+        floor,
+        table,
+        status,
+        source,
+        guestName: `${firstName} ${lastName}`.trim(),
+        phone: phone || email,
+        note: note.trim() || undefined,
+      });
+    } catch (e) {
+      console.error(e);
+      setError(
+        e instanceof Error ? e.message : "Failed to save reservation. Please try again.",
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -1215,16 +1244,18 @@ function NewReservationModal({
         <div className="flex items-center justify-end gap-2 border-t border-border/70 bg-linen/60 px-6 py-4">
           <button
             onClick={onClose}
-            className="rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-secondary"
+            disabled={saving}
+            className="rounded-full border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-secondary disabled:opacity-60"
           >
             Cancel
           </button>
           <button
             onClick={save}
-            className="inline-flex items-center gap-1.5 rounded-full bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition hover:brightness-110"
+            disabled={saving}
+            className="inline-flex items-center gap-1.5 rounded-full bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition hover:brightness-110 disabled:opacity-60"
           >
             <Plus className="h-4 w-4" />
-            Save reservation
+            {saving ? "Saving…" : "Save reservation"}
           </button>
         </div>
       </div>
