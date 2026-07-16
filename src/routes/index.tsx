@@ -13,7 +13,6 @@ import {
   Minus,
   Phone,
   Mail,
-  UtensilsCrossed,
   MapPin,
   Clock,
 } from "lucide-react";
@@ -92,6 +91,36 @@ const dowLong = (d: Date) =>
 
 const shiftForHour = (h: number): Shift =>
   h < 12 ? "Breakfast" : h < 17 ? "Lunch" : "Dinner";
+
+const SHIFT_TIME_RANGES: Record<Shift, { start: string; end: string }> = {
+  Breakfast: { start: "09:00", end: "11:45" },
+  Lunch: { start: "12:00", end: "16:45" },
+  Dinner: { start: "17:00", end: "23:45" },
+};
+
+const timeToMinutes = (time: string) => {
+  const [hours, minutes] = time.split(":").map(Number);
+  return hours * 60 + minutes;
+};
+
+const minutesToTime = (value: number) => {
+  const hours = Math.floor(value / 60);
+  const minutes = value % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+};
+
+const timeOptionsForShift = (shift: Shift) => {
+  const range = SHIFT_TIME_RANGES[shift];
+  const options: string[] = [];
+  for (
+    let value = timeToMinutes(range.start);
+    value <= timeToMinutes(range.end);
+    value += 15
+  ) {
+    options.push(minutesToTime(value));
+  }
+  return options;
+};
 
 const FLOOR_TABLES: Record<FloorType, string[]> = {
   // Numeric floors kept for backward compat — stored as "TABLE.N" strings
@@ -474,10 +503,12 @@ function Header({
     <header className="sticky top-0 z-30 border-b border-border/70 bg-background/80 backdrop-blur-xl">
       <div className="mx-auto grid max-w-[1500px] grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-4 py-4 lg:grid-cols-[1fr_auto_1fr] lg:px-8">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-            <UtensilsCrossed className="h-5 w-5" />
-          </div>
-          <div className="min-w-0">
+          <img
+            src="/thalassa-logo.png"
+            alt="Thalassa Greek Restaurant"
+            className="h-14 w-auto max-w-[260px] object-contain"
+          />
+          <div className="hidden">
             <div className="truncate font-display text-xl font-semibold leading-none">
               Thalassa
             </div>
@@ -1299,6 +1330,13 @@ function ReservationDetailsModal({
   };
 
   const save = async () => {
+    if (
+      draft.status !== reservation.status &&
+      (draft.status === "cancelled" || draft.status === "no-show") &&
+      !window.confirm(`Mark reservation #${bookingLabel(draft)} as ${statusText(draft.status)}?`)
+    ) {
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -1315,6 +1353,9 @@ function ReservationDetailsModal({
   };
 
   const cancelReservation = async () => {
+    if (!window.confirm(`Cancel reservation #${bookingLabel(draft)}?`)) {
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -1526,12 +1567,19 @@ function NewReservationModal({
   const [contactSearching, setContactSearching] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  const timeOptions = useMemo(() => timeOptionsForShift(shift), [shift]);
 
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
   }, [onClose]);
+
+  useEffect(() => {
+    if (!timeOptions.includes(time)) {
+      setTime(timeOptions[0] || "09:00");
+    }
+  }, [time, timeOptions]);
 
   useEffect(() => {
     const q = contactQuery.trim();
@@ -1805,6 +1853,16 @@ function NewReservationModal({
                   ),
                 )}
               </div>
+
+              <Field label="Customer notes">
+                <textarea
+                  className={`${inputCls} min-h-24 resize-y`}
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="Allergies, celebration details, seating requests"
+                />
+              </Field>
+                
             </Section>
 
             {/* Booking */}
@@ -1812,25 +1870,6 @@ function NewReservationModal({
               title="Booking"
               icon={<CalendarDays className="h-3.5 w-3.5" />}
             >
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Date">
-                  <input
-                    type="date"
-                    className={inputCls}
-                    value={dateISO}
-                    onChange={(e) => setDateISO(e.target.value)}
-                  />
-                </Field>
-                <Field label="Time">
-                  <input
-                    type="time"
-                    className={inputCls}
-                    value={time}
-                    onChange={(e) => setTime(e.target.value)}
-                  />
-                </Field>
-              </div>
-
               <Field label="Shift">
                 <div className="grid grid-cols-3 gap-1.5 rounded-full border border-border bg-background/60 p-1">
                   {(["Breakfast", "Lunch", "Dinner"] as const).map((s) => (
@@ -1848,7 +1887,34 @@ function NewReservationModal({
                     </button>
                   ))}
                 </div>
+                <div className="mt-1 text-[11px] font-medium text-muted-foreground">
+                  {SHIFT_TIME_RANGES[shift].start} to {SHIFT_TIME_RANGES[shift].end}
+                </div>
               </Field>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Date">
+                  <input
+                    type="date"
+                    className={inputCls}
+                    value={dateISO}
+                    onChange={(e) => setDateISO(e.target.value)}
+                  />
+                </Field>
+                <Field label="Time">
+                  <select
+                    className={inputCls}
+                    value={time}
+                    onChange={(e) => setTime(e.target.value)}
+                  >
+                    {timeOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
 
               <Field label="Guests">
                 <div className="flex items-center gap-3">
