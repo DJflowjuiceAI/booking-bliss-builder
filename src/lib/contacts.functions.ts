@@ -7,6 +7,7 @@ export type ContactSearchResult = {
   phone: string;
   firstName: string;
   lastName: string;
+  tags: string[];
 };
 
 type RawContact = {
@@ -16,6 +17,7 @@ type RawContact = {
   lastName?: string | null;
   email?: string | null;
   phone?: string | null;
+  tags?: string[] | null;
 };
 
 export const searchContacts = createServerFn({ method: "POST" })
@@ -61,6 +63,7 @@ export const searchContacts = createServerFn({ method: "POST" })
         phone: c.phone || "",
         firstName: first,
         lastName: last,
+        tags: c.tags || [],
       };
     });
   });
