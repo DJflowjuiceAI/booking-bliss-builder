@@ -22,6 +22,7 @@ import {
   createReservation,
   updateReservation as updateReservationApi,
 } from "@/lib/reservations.functions";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 export const Route = createFileRoute("/")({
   component: BookingPage,
@@ -898,6 +899,45 @@ function LeftPanel({
   onSelect: (r: Reservation) => void;
   onStatusUpdate: (id: string, status: "confirmed" | "no-show" | "cancelled") => Promise<void>;
 }) {
+  const [confirm, setConfirm] = useState<{
+    title: string;
+    description: string;
+    confirmLabel: string;
+    variant: "destructive" | "warning";
+    action: () => Promise<void>;
+  } | null>(null);
+  const [updating, setUpdating] = useState(false);
+
+  const requestStatusUpdate = (
+    reservation: Reservation,
+    status: "no-show" | "cancelled",
+  ) => {
+    setConfirm({
+      title: status === "no-show" ? "Mark as No Show?" : "Cancel reservation?",
+      description:
+        status === "no-show"
+          ? `Reservation #${bookingLabel(reservation)} for ${reservation.guestName} will be marked as no show.`
+          : `Reservation #${bookingLabel(reservation)} for ${reservation.guestName} will be cancelled.`,
+      confirmLabel: status === "no-show" ? "No Show" : "Cancel Reservation",
+      variant: status === "no-show" ? "warning" : "destructive",
+      action: async () => {
+        setUpdating(true);
+        try {
+          await onStatusUpdate(reservation.id, status);
+        } finally {
+          setUpdating(false);
+        }
+      },
+    });
+  };
+
+  const handleConfirm = async () => {
+    if (!confirm) return;
+    const action = confirm.action;
+    setConfirm(null);
+    await action();
+  };
+
   return (
     <div className="flex min-h-0 flex-col gap-5">
       <div className="grid grid-cols-3 gap-3">
@@ -1016,13 +1056,13 @@ function LeftPanel({
                           ✓ Arrived
                         </button>
                         <button
-                          onClick={() => void onStatusUpdate(r.id, "no-show")}
+                          onClick={() => requestStatusUpdate(r, "no-show")}
                           className="flex-1 rounded-full bg-amber-soft py-1.5 text-xs font-bold text-amber-ink transition hover:brightness-95"
                         >
                           ✗ No Show
                         </button>
                         <button
-                          onClick={() => void onStatusUpdate(r.id, "cancelled")}
+                          onClick={() => requestStatusUpdate(r, "cancelled")}
                           className="flex-1 rounded-full bg-clay-soft py-1.5 text-xs font-bold text-clay transition hover:brightness-95"
                         >
                           ✕ Cancel
@@ -1046,6 +1086,17 @@ function LeftPanel({
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirm !== null}
+        title={confirm?.title ?? ""}
+        description={confirm?.description ?? ""}
+        confirmLabel={confirm?.confirmLabel}
+        variant={confirm?.variant}
+        loading={updating}
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => void handleConfirm()}
+      />
     </div>
   );
 }
@@ -1307,6 +1358,13 @@ function ReservationDetailsModal({
   const [tagText, setTagText] = useState(reservation.tags.join(", "));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{
+    title: string;
+    description: string;
+    confirmLabel: string;
+    variant: "destructive" | "warning";
+    action: () => Promise<void>;
+  } | null>(null);
 
   useEffect(() => {
     setDraft(reservation);
@@ -1329,14 +1387,7 @@ function ReservationDetailsModal({
     });
   };
 
-  const save = async () => {
-    if (
-      draft.status !== reservation.status &&
-      (draft.status === "cancelled" || draft.status === "no-show") &&
-      !window.confirm(`Mark reservation #${bookingLabel(draft)} as ${statusText(draft.status)}?`)
-    ) {
-      return;
-    }
+  const performSave = async () => {
     setSaving(true);
     setError(null);
     try {
@@ -1352,10 +1403,7 @@ function ReservationDetailsModal({
     }
   };
 
-  const cancelReservation = async () => {
-    if (!window.confirm(`Cancel reservation #${bookingLabel(draft)}?`)) {
-      return;
-    }
+  const performCancel = async () => {
     setSaving(true);
     setError(null);
     try {
@@ -1369,6 +1417,40 @@ function ReservationDetailsModal({
     } finally {
       setSaving(false);
     }
+  };
+
+  const save = async () => {
+    if (
+      draft.status !== reservation.status &&
+      (draft.status === "cancelled" || draft.status === "no-show")
+    ) {
+      setConfirm({
+        title: `Mark as ${statusText(draft.status)}?`,
+        description: `Reservation #${bookingLabel(draft)} for ${draft.guestName} will be marked as ${statusText(draft.status).toLowerCase()}.`,
+        confirmLabel: statusText(draft.status),
+        variant: draft.status === "no-show" ? "warning" : "destructive",
+        action: performSave,
+      });
+      return;
+    }
+    await performSave();
+  };
+
+  const cancelReservation = () => {
+    setConfirm({
+      title: "Cancel reservation?",
+      description: `Reservation #${bookingLabel(draft)} for ${draft.guestName} will be cancelled.`,
+      confirmLabel: "Cancel Reservation",
+      variant: "destructive",
+      action: performCancel,
+    });
+  };
+
+  const handleConfirm = async () => {
+    if (!confirm) return;
+    const action = confirm.action;
+    setConfirm(null);
+    await action();
   };
 
   return (
@@ -1491,6 +1573,17 @@ function ReservationDetailsModal({
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirm !== null}
+        title={confirm?.title ?? ""}
+        description={confirm?.description ?? ""}
+        confirmLabel={confirm?.confirmLabel}
+        variant={confirm?.variant}
+        loading={saving}
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => void handleConfirm()}
+      />
     </div>
   );
 }
