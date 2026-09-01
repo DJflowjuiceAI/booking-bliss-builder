@@ -1,0 +1,16 @@
+# Netlify build config for this TanStack Start (Nitro) app.
+#
+# Nitro auto-selects its `netlify` preset when it sees NETLIFY=true, so
+# `bun run build` produces:
+#   dist/                              -> static assets + _redirects/_headers
+#   .netlify/functions-internal/server -> SSR server (picked up automatically)
+#
+# The publish dir must therefore be `dist` (the old Vinxi template used
+# `dist/client`, which this project no longer generates).
+
+[build]
+  command = "bun run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
