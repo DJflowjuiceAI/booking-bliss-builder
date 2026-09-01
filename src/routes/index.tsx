@@ -23,6 +23,13 @@ import {
   updateReservation as updateReservationApi,
 } from "@/lib/reservations.functions";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import {
+  FLOOR_LABEL,
+  FLOOR_ORDER,
+  FLOOR_TABLES,
+  compareTables,
+  type FloorType,
+} from "@/lib/floors";
 
 export const Route = createFileRoute("/")({
   component: BookingPage,
@@ -32,7 +39,6 @@ export const Route = createFileRoute("/")({
 /* ─────────────── Types & data ─────────────── */
 
 type Shift = "Breakfast" | "Lunch" | "Dinner";
-type FloorType = "main" | "balcony" | "lounge" | "terrace";
 type ReservationStatus =
   | "confirmed"
   | "seated"
@@ -123,22 +129,6 @@ const timeOptionsForShift = (shift: Shift) => {
   return options;
 };
 
-const FLOOR_TABLES: Record<FloorType, string[]> = {
-  // Numeric floors kept for backward compat — stored as "TABLE.N" strings
-  main: Array.from({ length: 16 }, (_, i) => String(i + 1)),
-  balcony: Array.from({ length: 16 }, (_, i) => String(i + 1)),
-  lounge: Array.from({ length: 16 }, (_, i) => String(i + 1)),
-  terrace: Array.from({ length: 16 }, (_, i) => String(i + 1)),
-  // Thalassa GHL-matched floors
-};
-
-const FLOOR_LABEL: Record<FloorType, string> = {
-  main: "Main Floor",
-  balcony: "Balcony",
-  lounge: "Lounge",
-  terrace: "Terrace",
-};
-
 const STATUS_OPTIONS: ReservationStatus[] = [
   "confirmed",
   "seated",
@@ -153,10 +143,8 @@ const splitTags = (value?: string) =>
     .map((tag) => tag.trim())
     .filter(Boolean);
 
-const tableLabel = (value: string | number) => {
-  const raw = String(value);
-  return raw.includes(".") ? raw.split(".").at(-1) || raw : raw;
-};
+const tableLabel = (value: string | number) =>
+  String(value).replace(/^(table|t)[\s.]*/i, "");
 
 const bookingLabel = (r: Pick<Reservation, "bookingNumber" | "id">) =>
   r.bookingNumber || r.id.replace(/\D/g, "").slice(-4) || r.id.slice(-4);
@@ -1207,7 +1195,7 @@ function RightPanel({
     <div className="paper flex min-h-[560px] flex-col overflow-hidden rounded-2xl">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-5 py-4">
         <div className="flex items-center gap-1 rounded-full border border-border bg-background/60 p-1">
-          {(Object.keys(FLOOR_LABEL) as FloorType[]).map((f) => (
+          {FLOOR_ORDER.map((f) => (
             <button
               key={f}
               onClick={() => {
@@ -1242,25 +1230,37 @@ function RightPanel({
             const res = tableMap.get(n);
             const isSelected = selectedTable === n;
             const taken = !!res;
+            const label = tableLabel(n);
+            const numeric = !/[a-z]/i.test(label);
             return (
               <button
                 key={n}
                 onClick={() => setSelectedTable(isSelected ? null : n)}
-                className={`group relative flex aspect-square flex-col items-center justify-center rounded-2xl border text-center transition ${
+                className={`group relative flex aspect-square flex-col items-center justify-center rounded-2xl border px-1 text-center transition ${
                   taken
                     ? "border-terracotta/40 bg-terracotta text-primary-foreground shadow-md shadow-terracotta/20 hover:brightness-105"
                     : "border-border bg-card hover:-translate-y-0.5 hover:border-sage/60 hover:shadow-md"
                 } ${isSelected ? "ring-2 ring-offset-2 ring-offset-background ring-foreground" : ""}`}
               >
+                {numeric && (
+                  <div
+                    className={`text-[10px] font-bold uppercase tracking-widest ${
+                      taken ? "text-primary-foreground/75" : "text-muted-foreground"
+                    }`}
+                  >
+                    Table
+                  </div>
+                )}
                 <div
-                  className={`text-[10px] font-bold uppercase tracking-widest ${
-                    taken ? "text-primary-foreground/75" : "text-muted-foreground"
+                  className={`font-display font-semibold leading-none ${
+                    label.length <= 2
+                      ? "text-3xl"
+                      : label.length <= 4
+                        ? "text-2xl"
+                        : "text-base"
                   }`}
                 >
-                  Table
-                </div>
-                <div className="font-display text-3xl font-semibold leading-none">
-                  {tableLabel(n)}
+                  {label}
                 </div>
                 {taken ? (
                   <div className="mt-1 flex items-center gap-1 text-[10px] font-semibold">
@@ -1382,7 +1382,7 @@ function ReservationDetailsModal({
       const exists = prev.tables.includes(table);
       const tables = exists
         ? prev.tables.filter((t) => t !== table)
-        : [...prev.tables, table].sort((a, b) => Number(a) - Number(b));
+        : [...prev.tables, table].sort(compareTables);
       return { ...prev, tables, table: tables[0] || "" };
     });
   };
@@ -1536,7 +1536,7 @@ function ReservationDetailsModal({
                   value={draft.floor}
                   onChange={(e) => setDraft({ ...draft, floor: e.target.value as FloorType, table: "", tables: [] })}
                 >
-                  {(Object.keys(FLOOR_LABEL) as FloorType[]).map((f) => (
+                  {FLOOR_ORDER.map((f) => (
                     <option key={f} value={f}>
                       {FLOOR_LABEL[f]}
                     </option>
@@ -1606,7 +1606,9 @@ function TableToggleGrid({
             key={table}
             type="button"
             onClick={() => onToggle(table)}
-            className={`aspect-square rounded-lg border text-sm font-semibold transition ${
+            className={`grid aspect-square place-items-center rounded-lg border px-1 font-semibold leading-none transition ${
+              table.length > 4 ? "text-[11px]" : "text-sm"
+            } ${
               active
                 ? "border-terracotta bg-terracotta text-primary-foreground shadow-sm"
                 : "border-border bg-background/60 text-muted-foreground hover:border-sage/70 hover:text-foreground"
@@ -2040,7 +2042,7 @@ function NewReservationModal({
                     setTables([]);
                   }}
                 >
-                  {(Object.keys(FLOOR_LABEL) as FloorType[]).map((f) => (
+                  {FLOOR_ORDER.map((f) => (
                     <option key={f} value={f}>
                       {FLOOR_LABEL[f]}
                     </option>
@@ -2056,7 +2058,7 @@ function NewReservationModal({
                     setTables((prev) =>
                       prev.includes(table)
                         ? prev.filter((t) => t !== table)
-                        : [...prev, table].sort((a, b) => Number(a) - Number(b)),
+                        : [...prev, table].sort(compareTables),
                     )
                   }
                 />

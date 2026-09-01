@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { FLOOR_MAP, normalizeTable, type FloorType } from "./floors";
 
 export type CalendarReservation = {
   id: string;
@@ -6,7 +7,7 @@ export type CalendarReservation = {
   shift: "Breakfast" | "Lunch" | "Dinner";
   timeLabel: string;
   guests: number;
-  floor: "main" | "balcony" | "lounge" | "terrace";
+  floor: FloorType;
   table: string;
   tables: string[];
   status: "confirmed" | "seated" | "completed" | "no-show" | "cancelled";
@@ -41,14 +42,6 @@ type ContactDetails = {
   email?: string | null;
   phone?: string | null;
   tags?: string[] | null;
-};
-
-const FLOOR_MAP: Record<string, CalendarReservation["floor"]> = {
-  "main floor": "main",
-  main: "main",
-  balcony: "balcony",
-  lounge: "lounge",
-  terrace: "terrace",
 };
 
 function parseDetails(text: string | undefined) {
@@ -135,20 +128,13 @@ function toReservation(
   const contactId = contactIdForEvent(ev);
 
   const floorRaw = (details["floor"] || "main floor").toLowerCase();
-  const floor = FLOOR_MAP[floorRaw] || "main";
+  const floor: FloorType = FLOOR_MAP[floorRaw] || "main";
 
   const tablesStr = details["assigned table"] || details["table"] || "";
   const tables = tablesStr
     .split(/[,;/]/)
-    .map((s) => s.trim().replace(/^[A-Z]+\./i, ""))
-    .filter((table) => {
-      const tableNumber = Number(table);
-      return (
-        Number.isFinite(tableNumber) &&
-        tableNumber >= 1 &&
-        tableNumber <= 16
-      );
-    });
+    .map((s) => normalizeTable(s, floor))
+    .filter((table): table is string => table !== null);
 
   const guests =
     Number(details["number of guests"] || details["guests"] || 2) || 2;
